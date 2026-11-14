@@ -97,12 +97,23 @@ Status-line fields: `noise` = background rise in dB, `loud` = outdoor-noise sign
 (one line per heat-loss event, rotated at 2000 lines), under the app folder. Override the
 location with the `SENTINEL_DATA_DIR` environment variable if the app folder does not persist.
 
+## Live camera preview
+
+The app serves a live MJPEG preview on port 8080. Open `http://<board-ip>:8080/` in a browser
+on the same trusted network as the board. The app log prints the address to use. The stream
+uses the camera frames already captured for analysis; it does not save video to disk.
+
+The preview server binds to all network interfaces by default and has no authentication. Use it
+only on a trusted network; set `VIDEO_SERVER_ENABLED = False` in `python/sentinel/config.py` to
+disable it. If you only need a preview on the board itself, set `VIDEO_SERVER_HOST = "127.0.0.1"`.
+
 ## Privacy
 
-No bricks, no network listeners, no network code. Frames are shrunk to 160×120, compared with
-the previous one, and dropped; no image is ever saved, logged, or sent. The only camera-derived
-value stored is the window reference: 24 contrast-normalised brightness numbers of the window
-area, captured while nobody moves.
+Frames are held briefly in memory and sent to connected preview browsers; they are not saved or
+logged. Motion analysis still uses downscaled 160×120 frames. The only camera-derived value
+stored on disk is the window reference: 24 contrast-normalised brightness numbers of the window
+area, captured while nobody moves. The preview server does not authenticate clients, so do not
+expose its port to an untrusted network.
 
 ## Known limits
 

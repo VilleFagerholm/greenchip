@@ -1,6 +1,6 @@
 """Draft Sentinel, Linux side: camera motion + window watch, fusion, alerts, events, settings.
 
-Frames are downscaled, compared, and dropped; only derived numbers leave the camera thread.
+Camera frames are analyzed on-device; the optional live preview streams JPEGs from memory.
 Contracts: specs/002-draft-sentinel/contracts/.
 """
 
@@ -10,7 +10,7 @@ import traceback
 from collections import deque
 from datetime import datetime
 
-import numpy as np
+import numpy as nps
 from arduino.app_utils import App, Bridge, Logger
 
 from sentinel import config, motion
@@ -26,6 +26,7 @@ from sentinel.noise_watch import NoiseWatch, rms_dbfs
 from sentinel.room_normal import RoomNormal
 from sentinel.selftest import DISABLED, MISSING, NO_DETAIL, OK, STALLED, Parts, ThermoRules
 from sentinel.status_line import format_status
+from sentinel.video_server import LatestFrame, VideoServer
 from sentinel.window_watch import DONE, READY, WAITING, Calibration, WindowWatch, summarize
 
 logger = Logger("sentinel")
@@ -55,6 +56,7 @@ latest_summary = None
 want_area_map = False
 area_sum = None
 area_count = 0
+video_frames = LatestFrame()
 occupancy = Occupancy()
 noise = NoiseWatch()
 mic_state = MISSING if config.MIC_ENABLED else DISABLED
@@ -106,7 +108,7 @@ def on_knob_event(kind) -> None:
             knob_events.append(kind)
 
 
-# --- camera thread (research R2): derived numbers only ---
+# --- camera thread: motion analysis and optional in-memory video preview ---
 
 def open_camera():
     import cv2
@@ -131,6 +133,8 @@ def camera_loop() -> None:
     while True:
         cap = None
         try:
+            import cv2
+
             cap = open_camera()
             if cap is None:
                 with lock:
@@ -150,6 +154,14 @@ def camera_loop() -> None:
                         break
                     time.sleep(0.1)
                     continue
+                if config.VIDEO_SERVER_ENABLED:
+                    encoded_ok, encoded = cv2.imencode(
+                        ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, config.VIDEO_JPEG_QUALITY]
+                    )
+                    if encoded_ok:
+                        video_frames.publish(encoded.tobytes())
+                    else:
+                        logger.debug("Could not encode camera frame for video preview")
                 cur = motion.prepare(frame)
                 del frame
                 if prev is not None:
@@ -416,6 +428,22 @@ def loop() -> None:
 
 Bridge.provide("mcu_state", on_mcu_state)
 Bridge.provide("knob_event", on_knob_event)
+
+if config.VIDEO_SERVER_ENABLED:
+    try:
+        preview = VideoServer(
+            video_frames,
+            config.VIDEO_SERVER_HOST,
+            config.VIDEO_SERVER_PORT,
+            config.CAMERA_STALL_S,
+        )
+        preview.start()
+        logger.info(
+            f"Video preview listening on {config.VIDEO_SERVER_HOST}:{config.VIDEO_SERVER_PORT}; "
+            f"open http://<board-ip>:{config.VIDEO_SERVER_PORT}/ in a browser on the same trusted network"
+        )
+    except OSError as exc:
+        logger.error(f"Could not start video preview server: {exc}")
 
 camera_thread = threading.Thread(target=camera_loop, daemon=True)
 camera_thread.start()

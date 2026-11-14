@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Draft Sentinel — Camera trực tiếp</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101714; color: #edf7f0; }
+    body { max-width: 900px; margin: 0 auto; padding: 28px 18px; }
+    h1 { margin-bottom: 6px; font-size: clamp(1.5rem, 4vw, 2.2rem); }
+    p { color: #a9bbb0; }
+    .status { display: flex; align-items: center; gap: 9px; margin: 20px 0 12px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #748078; }
+    .dot.live { background: #55d68b; box-shadow: 0 0 12px #55d68b88; }
+    .video { overflow: hidden; border: 1px solid #33443a; border-radius: 14px; background: #080b09; }
+    img { display: block; width: 100%; min-height: 220px; object-fit: contain; }
+    .note { margin-top: 16px; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <h1>Draft Sentinel</h1>
+  <p>Xem trực tiếp camera USB đang kết nối với board.</p>
+  <div class="status" role="status" aria-live="polite">
+    <span id="dot" class="dot"></span><span id="state">Đang kết nối camera…</span>
+  </div>
+  <div class="video">
+    <img src="/video.mjpg" alt="Luồng video trực tiếp từ camera">
+  </div>
+  <p class="note">Video chỉ được giữ tạm trong bộ nhớ và truyền đến trình duyệt khi trang này mở.</p>
+  <script>
+    const dot = document.getElementById("dot");
+    const state = document.getElementById("state");
+    async function checkCamera() {
+      try {
+        const response = await fetch("/health", { cache: "no-store" });
+        const health = await response.json();
+        dot.classList.toggle("live", health.camera_ready);
+        state.textContent = health.camera_ready
+          ? "Đang phát trực tiếp"
+          : "Chưa nhận được hình — kiểm tra camera và log của app";
+      } catch {
+        dot.classList.remove("live");
+        state.textContent = "Không kết nối được tới app trên board";
+      }
+    }
+    checkCamera();
+    setInterval(checkCamera, 2000);
+  </script>
+</body>
+</html>
