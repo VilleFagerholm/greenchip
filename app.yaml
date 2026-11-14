@@ -1,0 +1,4 @@
+name: Draft Sentinel
+icon: 🪟
+description: Warns locally (LED matrix, then buzzer) when heat escapes an empty room through an open window. Camera motion and a window-area check run on the board; nothing leaves the device.
+bricks: []
