@@ -31,6 +31,11 @@ class Occupancy:
         if len(self._motion_times) >= config.MOVEMENT_MIN_FRAMES:
             self.last_movement_t = sample.t
 
+    def note_person(self, t: float) -> None:
+        """A person box from the object-detection model counts as presence (someone is here)."""
+        if self.healthy_since_t is not None:
+            self.last_movement_t = t if self.last_movement_t is None else max(t, self.last_movement_t)
+
     def state(self, t: float | None = None) -> str:
         t = self._now if t is None else t
         if self.healthy_since_t is None:

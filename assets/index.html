@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Draft Sentinel — Zero-Cloud Open-Window & Draft Energy Sentinel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Sora:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" type="text/css" href="style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hud-header">
+        <div class="brand">
+          <h1 id="productTitle">Draft Sentinel</h1>
+          <p id="productTagline" class="hud-strip">Zero-cloud open-window &amp; draft energy sentinel</p>
+        </div>
+        <div class="hud-meta">
+          <span id="uptimeMeta">uptime --</span>
+          <span id="previewState" class="meta-tag">preview off</span>
+          <span id="previewZoom" class="meta-tag" hidden>zoom 1.0×</span>
+        </div>
+      </header>
+
+      <div id="error-container" class="error-banner" style="display: none">Device not responding</div>
+
+      <main class="stage">
+        <section class="vision">
+          <div class="vision-toolbar">
+            <div class="vision-copy">
+              <h2>Vision</h2>
+              <p id="activityHeatmapLabel" class="heatmap-label">Activity density · not temperature</p>
+              <p id="activityAcousticCue" class="heatmap-label activity-acoustic-cue"></p>
+            </div>
+            <button id="previewToggle" class="btn" type="button">Preview on</button>
+          </div>
+          <div id="activityHeatmapUnavailable" class="heatmap-unavailable" hidden>Activity map unavailable</div>
+          <div id="videoFeedContainer" class="vision-stage">
+            <div id="videoPlaceholder" class="vision-idle">
+              <p>Preview off</p>
+              <span>Presence still updates</span>
+            </div>
+            <img id="videoFeed" alt="Preview" style="display: none" />
+            <div id="activityGrid" class="activity-grid" role="img" aria-label="Activity density heatmap"></div>
+            <div id="presenceBadge" class="presence-badge absent">ABSENT</div>
+          </div>
+        </section>
+
+        <aside class="rail">
+          <section class="rail-block climate">
+            <h2>Thermo</h2>
+            <div class="metrics">
+              <div class="metric">
+                <strong id="tempValue">--</strong><span>°C</span>
+              </div>
+              <div class="metric dim">
+                <strong id="humidityValue">--</strong><span>% RH</span>
+              </div>
+            </div>
+            <p class="sub inline">
+              Normal <strong id="normalValue">--</strong>°C
+              <span class="sep">/</span>
+              Drop <strong id="dropValue">--</strong>°C
+            </p>
+          </section>
+
+          <section class="rail-block noise">
+            <div class="panel-head">
+              <h2>Noise</h2>
+              <div id="noiseStatus" class="status-chip">--</div>
+            </div>
+            <p class="sub readouts">
+              <span>Now <strong id="noiseDb">--</strong></span>
+              <span>Med <strong id="noiseMedian">--</strong></span>
+              <span>Rise <strong id="noiseRise">--</strong></span>
+            </p>
+            <p id="heatmapLabel" class="heatmap-label sr-only">Energy over time</p>
+            <div id="heatmapUnavailable" class="heatmap-unavailable" hidden>Mic unavailable</div>
+            <div id="energyStrip" class="energy-strip" role="img" aria-label="Acoustic energy over time"></div>
+          </section>
+
+          <section class="rail-block draft">
+            <div class="panel-head">
+              <h2>Draft</h2>
+              <div id="sentinelBadge" class="status-chip">--</div>
+            </div>
+            <p id="sentinelReason" class="sub tight">Waiting…</p>
+            <div class="signal-row">
+              <div class="signal-chip" id="sigCold">
+                <span class="sig-name">Cold</span>
+                <span class="sig-hint">sill vs normal</span>
+                <strong id="sigColdDetail">--</strong>
+              </div>
+              <div class="signal-chip" id="sigWindow">
+                <span class="sig-name">Window</span>
+                <span class="sig-hint">≠ closed ref</span>
+                <strong id="sigWindowDetail">--</strong>
+              </div>
+              <div class="signal-chip" id="sigNoise">
+                <span class="sig-name">Noise</span>
+                <span class="sig-hint">~30s rise</span>
+                <strong id="sigNoiseDetail">--</strong>
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="snoozeButton" class="btn" type="button">Snooze 15 min</button>
+              <button id="calibrateButton" class="btn secondary" type="button">Calibrate</button>
+              <button id="summaryButton" class="btn secondary" type="button">Board</button>
+            </div>
+            <p id="calibrationStatus" class="sub tight"></p>
+            <pre id="areaMap" class="area-map" style="display: none"></pre>
+          </section>
+
+          <section class="rail-block occupancy">
+            <div class="panel-head">
+              <h2>Room</h2>
+              <div id="occupancyBadge" class="status-chip">--</div>
+            </div>
+            <p class="sub inline">People <strong id="peoplePresentLabel">--</strong></p>
+            <p id="occupancyDetail" class="sub tight"></p>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="footer-bar">
+        <div class="footer-group mirrors">
+          <span class="footer-label">Board</span>
+          <span id="matrixMirror" class="mono-line">IDLE</span>
+          <span class="dot">·</span>
+          <span id="buzzerMirror" class="mono-line">STANDBY</span>
+          <div id="partsList" class="parts-list"></div>
+        </div>
+        <div class="footer-group log">
+          <span class="footer-label">Today</span>
+          <div class="stat-row">
+            <div><strong id="todayEvents">--</strong><span>evt</span></div>
+            <div><strong id="todayMinutes">--</strong><span>min</span></div>
+            <div><strong id="todayDm">--</strong><span>°C·min</span></div>
+          </div>
+          <ul id="recentEvents" class="log-list"></ul>
+        </div>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

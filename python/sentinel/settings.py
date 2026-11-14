@@ -17,6 +17,7 @@ VERSION = 1
 class Settings:
     sensitivity_c: float = config.SENS_DEFAULT_C
     window_reference: WindowReference | None = None
+    noise_threshold_db: float = config.DEFAULT_NOISE_THRESHOLD_DB
 
 
 def clamp_sensitivity(value) -> float:
@@ -26,6 +27,16 @@ def clamp_sensitivity(value) -> float:
         return config.SENS_DEFAULT_C
     if not config.SENS_MIN_C <= v <= config.SENS_MAX_C:
         return config.SENS_DEFAULT_C
+    return v
+
+
+def clamp_noise_threshold(value) -> float:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return config.DEFAULT_NOISE_THRESHOLD_DB
+    if not config.NOISE_THRESHOLD_MIN_DB <= v <= config.NOISE_THRESHOLD_MAX_DB:
+        return config.DEFAULT_NOISE_THRESHOLD_DB
     return v
 
 
@@ -48,6 +59,8 @@ def load(data_dir: Path) -> Settings:
     return Settings(
         sensitivity_c=clamp_sensitivity(raw.get("sensitivity_c", config.SENS_DEFAULT_C)),
         window_reference=WindowReference.from_dict(ref) if ref else None,
+        noise_threshold_db=clamp_noise_threshold(
+            raw.get("noise_threshold_db", config.DEFAULT_NOISE_THRESHOLD_DB)),
     )
 
 
@@ -58,6 +71,7 @@ def save(data_dir: Path, settings: Settings) -> None:
         "version": VERSION,
         "sensitivity_c": clamp_sensitivity(settings.sensitivity_c),
         "window_reference": settings.window_reference.to_dict() if settings.window_reference else None,
+        "noise_threshold_db": clamp_noise_threshold(settings.noise_threshold_db),
     }
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(body))

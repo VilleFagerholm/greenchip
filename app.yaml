@@ -1,4 +1,8 @@
 name: Draft Sentinel
 icon: 🪟
-description: Warns locally (LED matrix, then buzzer) when heat escapes an empty room through an open window. Camera motion and a window-area check run on the board; nothing leaves the device.
+description: >-
+  Zero-Cloud Open-Window & Draft Energy Sentinel — cuts winter district-heating
+  waste without cloud surveillance. Local camera/thermo/mic fusion; Room HUD on
+  port 7000 in development builds (gated preview, presence, activity density).
+ports: [7000]
 bricks: []

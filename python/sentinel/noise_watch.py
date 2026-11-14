@@ -28,6 +28,7 @@ class NoiseWatch:
         self._history: deque[tuple[float, float]] = deque()
         self.floor_db: float | None = None
         self.baseline_db: float | None = None
+        self.last_db: float | None = None
         self.signal = False
         self._loud_since_t: float | None = None
         self._quiet_since_t: float | None = None
@@ -38,7 +39,13 @@ class NoiseWatch:
             return None
         return self.floor_db - self.baseline_db
 
+    def median_db(self, t: float, window_s: float | None = None) -> float | None:
+        window_s = config.NOISE_UI_MEDIAN_S if window_s is None else window_s
+        vals = [v for ts, v in self._chunks if t - ts <= window_s]
+        return float(median(vals)) if vals else None
+
     def add_chunk(self, t: float, level_dbfs: float) -> None:
+        self.last_db = level_dbfs
         self._chunks.append((t, level_dbfs))
         while t - self._chunks[0][0] > config.NOISE_FLOOR_WINDOW_S:
             self._chunks.popleft()

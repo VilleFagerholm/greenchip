@@ -26,6 +26,17 @@ def prepare(frame_bgr) -> np.ndarray:
     return cv2.GaussianBlur(small, (config.BLUR_KSIZE, config.BLUR_KSIZE), 0)
 
 
+def prepare_jpeg(jpeg: bytes) -> np.ndarray | None:
+    """JPEG from the detection brick -> small blurred grayscale, or None if undecodable."""
+    import cv2
+
+    gray = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        return None
+    small = cv2.resize(gray, config.FRAME_SIZE, interpolation=cv2.INTER_AREA)
+    return cv2.GaussianBlur(small, (config.BLUR_KSIZE, config.BLUR_KSIZE), 0)
+
+
 def compute(prev: np.ndarray, cur: np.ndarray, t: float) -> MotionSample:
     diff = np.abs(cur.astype(np.int16) - prev.astype(np.int16))
     fraction = float(np.count_nonzero(diff > config.PIXEL_DIFF_THRESHOLD)) / diff.size
@@ -51,3 +62,9 @@ def cell_motion_map(prev: np.ndarray, cur: np.ndarray, grid=config.GRID) -> list
             row.append(min(9, int(round(cell.mean() * 30))))
         out.append(row)
     return out
+
+
+def cell_motion_floats(prev: np.ndarray, cur: np.ndarray, grid=config.GRID) -> list[list[float]]:
+    """Same grid as cell_motion_map, scaled to [0, 1] for activity density (feature 007)."""
+    digits = cell_motion_map(prev, cur, grid=grid)
+    return [[min(1.0, d / 9.0) for d in row] for row in digits]

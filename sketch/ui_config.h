@@ -31,6 +31,11 @@ const int16_t KNOB_MAX_STEP = 5;
 
 const int16_t SENS_DEFAULT_X10 = 10;
 
+// Preview zoom while Development Preview Mode is on (knob rotate). 10 = 1.0× … 30 = 3.0×
+const int16_t ZOOM_MIN_X10 = 10;
+const int16_t ZOOM_MAX_X10 = 30;
+const int16_t ZOOM_DEFAULT_X10 = 10;
+
 // HS3003 (Thermo); SHT31 variant answers on 0x45.
 const uint8_t THERMO_I2C_ADDR = 0x44;
 const uint8_t THERMO_I2C_ADDR_ALT = 0x45;

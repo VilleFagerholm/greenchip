@@ -157,8 +157,13 @@ inline void drawIdle(uint8_t* fb, const View& s, unsigned long now) {
 }
 
 // Marks shown on every view except the self-test.
-inline void drawPermanentMarks(uint8_t* fb, const View& s, unsigned long now) {
+// previewActive: Development Preview Mode bar on column 12 rows 1–6
+// (specs/003-sensor-camera-ui/contracts/preview-and-matrix.md).
+inline void drawPermanentMarks(uint8_t* fb, const View& s, unsigned long now, bool previewActive = false) {
   if (s.camera == 1) setPx(fb, 12, 0);  // camera active (constitution I)
+  if (previewActive) {
+    for (int y = 1; y <= 6; y++) setPx(fb, 12, y);
+  }
   if (s.snoozed && blinkOn(now, BLINK_SNOOZE_MS)) setPx(fb, 12, 7);
   if (s.faults) setPx(fb, 0, 7);
 }

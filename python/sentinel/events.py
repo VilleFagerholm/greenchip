@@ -98,3 +98,21 @@ class EventLog:
             if reason in s.by_end_reason:
                 s.by_end_reason[reason] += 1
         return s
+
+    def recent_today(self, now: datetime, limit: int | None = None) -> list[dict]:
+        """Newest-first short list of today's events for the dashboard (derived fields only)."""
+        limit = config.UI_RECENT_EVENTS if limit is None else limit
+        today = now.date().isoformat()
+        rows = []
+        for r in self._records():
+            if not isinstance(r, dict) or not str(r.get("start", "")).startswith(today):
+                continue
+            rows.append({
+                "start": r.get("start"),
+                "duration_s": int(r.get("duration_s", 0) or 0),
+                "max_drop_c": float(r.get("max_drop_c", 0) or 0),
+                "degree_minutes": float(r.get("degree_minutes", 0) or 0),
+                "end_reason": r.get("end_reason"),
+            })
+        rows.reverse()
+        return rows[:limit]

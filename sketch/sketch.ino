@@ -26,6 +26,8 @@ unsigned long snoozeUntilMs = 0;
 uint8_t lvState = LS_IDLE, lvSignals = 0, lvOcc = OCC_UNKNOWN, lvCamera = 0, lvSetup = SETUP_NEEDED, lvFaults = 0;
 unsigned long lvLastMs = 0;
 bool lvSeen = false;
+bool previewActive = false;  // Development Preview Mode mark (feature 003)
+int16_t zoomX10 = ZOOM_DEFAULT_X10;  // 10–30 → 1.0×–3.0× while preview is on
 
 // overlays
 unsigned long selftestUntilMs = 0, sensViewUntilMs = 0, snoozeViewUntilMs = 0, summaryUntilMs = 0;
@@ -146,6 +148,13 @@ void set_view(int state, int signals, int occupancy, int camera, int setup, int 
   lvSeen = true;
 }
 
+void set_preview_active(int active) {
+  previewActive = active != 0;
+  if (previewActive) {
+    Bridge.notify("preview_zoom", (int)zoomX10);
+  }
+}
+
 int play_sound(int kind) {
   bool quiet = snoozed(millis());
   switch (kind) {
@@ -200,6 +209,12 @@ void toggleSnooze(unsigned long now) {
   notifyNow = true;
 }
 
+// Dashboard snooze button: 1 = on, 0 = off (same as knob short press).
+void set_snooze(int on) {
+  unsigned long now = millis();
+  if ((on != 0) != snoozed(now)) toggleSnooze(now);
+}
+
 void readKnob(unsigned long now) {
   if (pendingShort && now - pendingSinceMs >= DOUBLE_PRESS_MS) {
     pendingShort = false;
@@ -210,11 +225,19 @@ void readKnob(unsigned long now) {
   int16_t pos = knob.get();
   int16_t delta = pos - lastKnobPos;
   if (delta != 0 && abs(delta) <= KNOB_MAX_STEP) {
-    int16_t before = sensX10;
-    sensX10 = constrain(sensX10 + delta, sensMinX10, sensMaxX10);
-    sensViewUntilMs = now + SENS_VIEW_MS;
-    notifyNow = true;
-    tick(sensX10 == before ? BONK_HZ : TICK_BASE_HZ + sensX10 * TICK_STEP_HZ, now);
+    if (previewActive) {
+      // Preview on: rotate zooms the camera crop (sensitivity unchanged).
+      int16_t before = zoomX10;
+      zoomX10 = constrain((int16_t)(zoomX10 + delta), ZOOM_MIN_X10, ZOOM_MAX_X10);
+      Bridge.notify("preview_zoom", (int)zoomX10);
+      tick(zoomX10 == before ? BONK_HZ : TICK_BASE_HZ + zoomX10 * TICK_STEP_HZ, now);
+    } else {
+      int16_t before = sensX10;
+      sensX10 = constrain(sensX10 + delta, sensMinX10, sensMaxX10);
+      sensViewUntilMs = now + SENS_VIEW_MS;
+      notifyNow = true;
+      tick(sensX10 == before ? BONK_HZ : TICK_BASE_HZ + sensX10 * TICK_STEP_HZ, now);
+    }
   }
   lastKnobPos = pos;
 
@@ -298,7 +321,7 @@ void drawFrame(unsigned long now) {
   } else {
     drawIdle(frame, v, now);
   }
-  drawPermanentMarks(frame, v, now);
+  drawPermanentMarks(frame, v, now, previewActive);
 
   // Press acknowledge within 200 ms; during a hold row 0 fills toward calibration.
   if (knobOk && knobWasPressed) {
@@ -327,6 +350,8 @@ void setup() {
   Bridge.provide_safe("play_sound", play_sound);
   Bridge.provide_safe("show_calibration", show_calibration);
   Bridge.provide_safe("show_summary", show_summary);
+  Bridge.provide_safe("set_preview_active", set_preview_active);
+  Bridge.provide_safe("set_snooze", set_snooze);
 
   selftestUntilMs = millis() + SELFTEST_VIEW_MS;
   SOUND(SOUND_STARTUP);
