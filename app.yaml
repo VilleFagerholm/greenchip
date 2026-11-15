@@ -2,7 +2,9 @@ name: Draft Sentinel
 icon: 🪟
 description: >-
   Zero-Cloud Open-Window & Draft Energy Sentinel — cuts winter district-heating
-  waste without cloud surveillance. Local camera/thermo/mic fusion; Room HUD on
-  port 7000 in development builds (gated preview, presence, activity density).
+  waste without cloud surveillance. Local YOLO object detection (Arduino brick),
+  thermo/mic fusion; Room HUD on port 7000 in development builds.
 ports: [7000]
+# Add "Video Object Detection AI" via App Lab UI (Add Brick → Add).
+# A stale/broken entry here shows as sidebar brick but launch fails: brick not found.
 bricks: []

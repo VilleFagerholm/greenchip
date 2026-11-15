@@ -16,16 +16,13 @@ CAPTURE_FPS = 8  # keep loop responsive; presence is motion-first
 CAMERA_STALL_S = 3.0
 CAMERA_REOPEN_S = 5.0
 PERSON_LABEL = "person"
-DEFAULT_CONFIDENCE = 0.5  # legacy; YOLOX removed in feature 005
+DEFAULT_CONFIDENCE = 0.45  # VideoObjectDetection / YOLO brick threshold
 PERSON_HOLD_S = 1.5
 PRESENCE_HOLD_S = 1.5  # people_present clears within ~2 s (SC-002)
-# HOG is expensive on the board — rare confirm only; motion drives snappy HUD presence.
-HOG_INTERVAL_S = 1.0
-HOG_SIZE = (160, 120)
-HOG_WIN_STRIDE = (16, 16)
-HOG_SCALE = 1.1
+# Still-image ObjectDetection fallback: infer at most this often (keeps HUD smooth).
+DETECT_INTERVAL_S = 0.12
 UI_FPS = 10
-DETECTIONS_MAX = 20
+DETECTIONS_MAX = 12
 UI_RECENT_EVENTS = 5
 PRODUCT_TITLE = "Draft Sentinel"
 PRODUCT_TAGLINE = "Zero-cloud open-window & draft energy sentinel"
@@ -136,7 +133,7 @@ CLOCK_VALID_YEAR = 2026
 # Default on for hackathon setup; set SENTINEL_DEV_BUILD=0 for a deployed product install.
 DEV_BUILD = os.environ.get("SENTINEL_DEV_BUILD", "1") == "1"
 UI_PORT = int(os.environ.get("SENTINEL_UI_PORT", "7000"))
-PREVIEW_MAX_FPS = 5
+PREVIEW_MAX_FPS = 10  # snappier YOLO preview; still rate-capped in DevPreviewState
 PREVIEW_JPEG_SIZE = (480, 270)  # wider 16:9-ish preview for the rectangular HUD stage
-PREVIEW_JPEG_QUALITY = 72
+PREVIEW_JPEG_QUALITY = 70  # slightly lighter encode for lower lag
 PREVIEW_PUSH_EVERY_S = 5.0  # re-send set_preview_active so MCU reset recovers the mark

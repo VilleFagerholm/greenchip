@@ -26,10 +26,10 @@ from sentinel.fusion import DRAFT, SUSPECT, fuse
 from sentinel.occupancy import EMPTY, OCCUPIED, Occupancy
 from sentinel.noise_watch import NoiseWatch, rms_dbfs
 from sentinel.energy_heatmap import EnergyHeatmap, intensity_from_sample
-from sentinel.activity_density import ActivityDensity
 from sentinel.feedback import feedback_message
 from sentinel.presence import PresenceState
 from sentinel.preview import DevPreviewState
+from sentinel import vision_detect
 from sentinel.room_normal import RoomNormal
 from sentinel.selftest import DISABLED, MISSING, NO_DETAIL, OK, STALLED, Parts, ThermoRules
 from sentinel.snapshot import build_snapshot
@@ -73,9 +73,15 @@ area_count = 0
 occupancy = Occupancy()
 noise = NoiseWatch()
 energy = EnergyHeatmap()
-activity = ActivityDensity()
 mic_state = MISSING if config.MIC_ENABLED else DISABLED
 last_chunk_at: float | None = None
+latest_detections: list[dict] = []
+_prev_gray = None
+_last_window_summary_at = -config.WINDOW_SAMPLE_S
+_detector = None
+_detector_kind: str | None = None
+_still_detector = None
+_last_detect_at = -1e9
 
 # --- loop-only state ---
 stored = settings_store.load(config.DATA_DIR)
@@ -102,8 +108,6 @@ presence = PresenceState()
 noise_threshold_db = stored.noise_threshold_db
 last_area_map: str | None = None
 preview_zoom = float(config.PREVIEW_ZOOM_DEFAULT)
-_hog = None
-_last_hog_at = -1e9
 
 
 def mcu_call(name: str, *args, default=None):
@@ -149,7 +153,7 @@ def on_preview_zoom(zoom_x10) -> None:
         preview_zoom = z
 
 
-# --- camera thread (research R2): derived numbers only ---
+# --- camera / YOLO (Arduino video_objectdetection brick; OpenCV fallback) ---
 
 def open_camera():
     import cv2
@@ -168,80 +172,86 @@ def open_camera():
     return None
 
 
-def encode_preview_jpeg(frame_bgr, zoom: float = 1.0):
-    """In-memory JPEG for Development Preview Mode. Never call imwrite / save to disk.
-
-    zoom > 1 crops the center of the frame (knob zoom while preview is on).
-    """
-    import cv2
-
-    frame = frame_bgr
-    z = max(config.PREVIEW_ZOOM_MIN, min(config.PREVIEW_ZOOM_MAX, float(zoom or 1.0)))
-    if z > 1.01:
-        fh, fw = frame.shape[:2]
-        cw = max(1, int(fw / z))
-        ch = max(1, int(fh / z))
-        x0 = max(0, (fw - cw) // 2)
-        y0 = max(0, (fh - ch) // 2)
-        frame = frame[y0:y0 + ch, x0:x0 + cw]
-    w, h = config.PREVIEW_JPEG_SIZE
-    small = cv2.resize(frame, (w, h))
-    x0, y0, x1, y1 = config.WINDOW_AREA
-    cv2.rectangle(
-        small,
-        (int(x0 * w), int(y0 * h)),
-        (max(0, int(x1 * w) - 1), max(0, int(y1 * h) - 1)),
-        (0, 200, 255),
-        1,
-    )
-    ok, buf = cv2.imencode(
-        ".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), config.PREVIEW_JPEG_QUALITY]
-    )
-    return buf.tobytes() if ok else None
-
-
 def offer_preview_bytes(jpeg: bytes, now: float) -> None:
-    """Serve JPEG only while preview is on. No boxes by default (latency). Never imwrite."""
+    """Serve JPEG only while preview is on. Never imwrite."""
     if not preview.active or not jpeg:
         return
     preview.offer_frame(jpeg, now)
 
 
-def _get_hog():
-    global _hog
-    if _hog is None:
-        import cv2
-        hog = cv2.HOGDescriptor()
-        hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-        _hog = hog
-    return _hog
+def _apply_vision(now: float, detections: dict | None, frame_jpeg: bytes | None) -> None:
+    """Update motion / occupancy / presence / preview from one YOLO (or fallback) tick."""
+    global camera_state, last_frame_at, latest_sample, latest_summary
+    global area_sum, area_count, latest_detections, _prev_gray, _last_window_summary_at
+
+    flat = vision_detect.flatten_detections(detections)
+    people = vision_detect.person_count(flat)
+    gray = motion.prepare_jpeg(frame_jpeg) if frame_jpeg else None
+    sample = None
+    summary = None
+    state = OK
+    area_cells = None
+    with lock:
+        z = preview_zoom
+        want_map = want_area_map
+        prev_g = _prev_gray
+    if gray is not None:
+        if prev_g is not None:
+            sample = motion.compute(prev_g, gray, now)
+            if sample.detail < config.MIN_DETAIL_STD:
+                state = NO_DETAIL
+            if want_map:
+                area_cells = motion.cell_motion_map(prev_g, gray)
+        if now - _last_window_summary_at >= config.WINDOW_SAMPLE_S:
+            _last_window_summary_at = now
+            summary = summarize(gray)
+
+    with lock:
+        if gray is not None:
+            _prev_gray = gray
+        if gray is not None or flat:
+            last_frame_at = now
+            camera_state = state if gray is not None else OK
+        elif last_frame_at is not None and now - last_frame_at > config.CAMERA_STALL_S:
+            camera_state = STALLED
+        latest_detections = flat
+        if sample is not None:
+            latest_sample = sample
+        if summary is not None:
+            latest_summary = summary
+        cam_ok = camera_state == OK
+        occupancy.update(now, sample, cam_ok)
+        presence.set_camera_ok(cam_ok)
+        if cam_ok:
+            if people > 0:
+                presence.note(now)
+                occupancy.note_person(now)
+            elif sample is not None and sample.kind == MOTION:
+                presence.note(now)
+            presence.clear_if_expired(now)
+        if area_cells is not None:
+            area_sum = area_cells if area_sum is None else [
+                [a + b for a, b in zip(ra, rb)] for ra, rb in zip(area_sum, area_cells)]
+            area_count += 1
+
+    if preview.active and frame_jpeg is not None:
+        jpeg = vision_detect.draw_boxes_jpeg(frame_jpeg, flat, zoom=z)
+        if jpeg is not None:
+            offer_preview_bytes(jpeg, now)
 
 
-def hog_person_present(frame_bgr) -> bool:
-    """Rare, cheap HOG confirm. Call only when due — never every frame."""
-    import cv2
-
+def on_yolo_detections(detections: dict, frame: bytes | None = None) -> None:
+    """Arduino VideoObjectDetection callback (async). Keep work light."""
     try:
-        w, h = config.HOG_SIZE
-        small = cv2.resize(frame_bgr, (w, h))
-        rects, _weights = _get_hog().detectMultiScale(
-            small,
-            winStride=config.HOG_WIN_STRIDE,
-            padding=(4, 4),
-            scale=config.HOG_SCALE,
-        )
-        return len(rects) > 0
-    except Exception:
-        return False
+        _apply_vision(uptime(), detections or {}, frame)
+    except Exception as exc:
+        logger.debug(f"vision callback error: {exc}")
 
 
-def camera_loop() -> None:
-    """Motion-first presence; HOG at most once per HOG_INTERVAL_S. Preview encode rate-capped."""
-    global camera_state, last_frame_at, latest_sample, latest_summary, area_sum, area_count
-    global _last_hog_at
+def camera_loop_opencv_fallback() -> None:
+    """OpenCV capture + optional still ObjectDetection when the live YOLO brick is unavailable."""
+    global camera_state, last_frame_at, latest_detections, _still_detector, _last_detect_at
     period = 1.0 / config.CAPTURE_FPS
-    preview_period = 1.0 / max(1, config.PREVIEW_MAX_FPS)
-    last_preview_encode_at = -preview_period
     while True:
         cap = None
         try:
@@ -252,8 +262,13 @@ def camera_loop() -> None:
                     presence.set_camera_ok(False)
                 time.sleep(config.CAMERA_REOPEN_S)
                 continue
-            prev = None
-            last_summary_at = -config.WINDOW_SAMPLE_S
+            if _still_detector is None:
+                det, kind = vision_detect.create_video_detector(
+                    config.DEFAULT_CONFIDENCE, camera_preview=False
+                )
+                if kind == "still":
+                    _still_detector = det
+                    logger.info("Using ObjectDetection still-image brick (OpenCV capture)")
             while True:
                 started = uptime()
                 ok, frame = cap.read()
@@ -263,63 +278,33 @@ def camera_loop() -> None:
                         stale = last_frame_at is None or now - last_frame_at > config.CAMERA_STALL_S
                     if stale:
                         break
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                     continue
+                import cv2
+                import numpy as np
 
-                # 1) Fast path: motion + snappy presence (do this before HOG/JPEG).
-                cur = motion.prepare(frame)
-                found = False
-                if prev is not None:
-                    sample = motion.compute(prev, cur, now)
-                    state = NO_DETAIL if sample.detail < config.MIN_DETAIL_STD else OK
-                    summary = None
-                    if now - last_summary_at >= config.WINDOW_SAMPLE_S:
-                        last_summary_at = now
-                        summary = summarize(cur)
-                    # HOG only when due and camera healthy — standing still still counts.
-                    if state == OK and now - _last_hog_at >= config.HOG_INTERVAL_S:
-                        _last_hog_at = now
-                        found = hog_person_present(frame)
-                    with lock:
-                        camera_state = state
-                        last_frame_at = now
-                        latest_sample = sample
-                        if summary is not None:
-                            latest_summary = summary
-                        occupancy.update(now, sample, state == OK)
-                        presence.set_camera_ok(state == OK)
-                        if state == OK:
-                            if found:
-                                presence.note(now)
-                                occupancy.note_person(now)
-                            elif sample.kind == MOTION:
-                                presence.note(now)
-                            presence.clear_if_expired(now)
-                        # Activity density grid (feature 007) — derived cells only, every frame pair.
-                        if state == OK:
-                            activity.set_camera_available(True)
-                            activity.note_cells(
-                                now,
-                                motion.cell_motion_floats(prev, cur, grid=config.ACTIVITY_GRID),
-                            )
-                        else:
-                            activity.set_camera_available(False)
-                        if want_area_map:
-                            cells = motion.cell_motion_map(prev, cur)
-                            area_sum = cells if area_sum is None else [
-                                [a + b for a, b in zip(ra, rb)] for ra, rb in zip(area_sum, cells)]
-                            area_count += 1
-
-                # 2) Preview JPEG last and rate-capped (encoding is costly).
-                if preview.active and now - last_preview_encode_at >= preview_period:
-                    with lock:
-                        z = preview_zoom
-                    jpeg = encode_preview_jpeg(frame, zoom=z)
-                    if jpeg is not None:
-                        offer_preview_bytes(jpeg, now)
-                        last_preview_encode_at = now
+                ok_j, buf = cv2.imencode(
+                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60]
+                )
+                jpeg = buf.tobytes() if ok_j else None
+                dets: dict = {}
+                if _still_detector is not None and jpeg is not None and now - _last_detect_at >= config.DETECT_INTERVAL_S:
+                    _last_detect_at = now
+                    try:
+                        dets = _still_detector.detect(jpeg, "jpg") or {}
+                    except Exception as exc:
+                        logger.debug(f"still detect: {exc}")
+                        dets = {}
+                elif latest_detections:
+                    # Reuse last boxes between inferences for smoother overlay.
+                    dets = {}
+                    for d in latest_detections:
+                        dets.setdefault(d["label"], []).append({
+                            "confidence": d["confidence"],
+                            "bounding_box_xyxy": d["box"],
+                        })
+                _apply_vision(now, dets, jpeg)
                 del frame
-                prev = cur
                 time.sleep(max(0.0, period - (uptime() - started)))
         except Exception as exc:
             logger.warning(f"Camera error: {exc}")
@@ -330,6 +315,22 @@ def camera_loop() -> None:
             camera_state = STALLED if last_frame_at is not None else MISSING
             presence.set_camera_ok(False)
         time.sleep(config.CAMERA_REOPEN_S)
+
+
+def start_vision() -> None:
+    """Prefer live YOLO brick; else OpenCV + still detection."""
+    global _detector, _detector_kind, camera_thread
+    det, kind = vision_detect.create_video_detector(
+        config.DEFAULT_CONFIDENCE, camera_preview=True
+    )
+    if kind == "video" and det is not None:
+        _detector, _detector_kind = det, kind
+        det.on_detect_all(on_yolo_detections)
+        logger.info("YOLO VideoObjectDetection brick active (Arduino stack)")
+        return
+    logger.warning("VideoObjectDetection brick unavailable — OpenCV fallback")
+    camera_thread = threading.Thread(target=camera_loop_opencv_fallback, daemon=True)
+    camera_thread.start()
 
 
 # --- microphone thread (research R12): one loudness number per chunk, audio dropped ---
@@ -375,9 +376,11 @@ def microphone_loop() -> None:
 
 def ensure_camera_thread() -> None:
     global camera_thread
-    if not camera_thread.is_alive():
+    if _detector_kind == "video":
+        return  # brick owns capture loops via App.run
+    if camera_thread is not None and not camera_thread.is_alive():
         logger.warning("Camera thread stopped; restarting")
-        camera_thread = threading.Thread(target=camera_loop, daemon=True)
+        camera_thread = threading.Thread(target=camera_loop_opencv_fallback, daemon=True)
         camera_thread.start()
 
 
@@ -514,7 +517,15 @@ def handle_ui_command(name: str, data: dict, now: float, alive: bool, snooze_act
         summary = event_log.summary_today(datetime.now())
         mcu_call("show_summary", summary.events, int(round(summary.degree_minutes)))
     elif name == "confidence":
-        pass  # YOLOX removed; keep route as no-op for older clients
+        value = cmd.clamp_confidence(data.get("value"))
+        if value is None:
+            return
+        config.DEFAULT_CONFIDENCE = value
+        if _detector_kind == "video" and _detector is not None:
+            try:
+                _detector.override_threshold(float(value))
+            except Exception as exc:
+                logger.debug(f"threshold override failed: {exc}")
 
 
 def on_http_command(name: str, body: dict) -> dict:
@@ -573,21 +584,18 @@ def tick() -> None:
                 noise.rise_db,
                 baseline_ready=noise.baseline_db is not None,
             )
-            inten, _mode, _raw = intensity_from_sample(
+            intensity_from_sample(
                 noise.last_db, noise.rise_db, noise.baseline_db is not None
             )
-            activity.set_acoustic(True, inten)
         else:
             energy.set_available(False)
-            activity.set_acoustic(False, 0.0)
-        if cam != OK:
-            activity.set_camera_available(False)
         noise_signal, noise_rise = noise.signal, noise.rise_db
         heatmap_snap = energy.to_snapshot()
-        activity_snap = activity.to_snapshot()
+        dets = list(latest_detections)
         zoom = preview_zoom
         presence.clear_if_expired(now)
         people_present = presence.present
+        people_n = vision_detect.person_count(dets)
         area_map_text = last_area_map
 
     alive = m is not None and seen_at is not None and now - seen_at <= config.MCU_TIMEOUT_S
@@ -689,7 +697,7 @@ def tick() -> None:
         drop_c=room.drop_c if thermo_ok else None,
         last_move_s=last_move,
         people_present=people_present,
-        people_count=0,
+        people_count=people_n,
         draft_label=label,
         draft_reason=reason,
         noise_db=noise_db,
@@ -698,7 +706,7 @@ def tick() -> None:
         noise_noisy=(noise_db is not None and noise_db >= noise_threshold_db),
         noise_threshold_db=noise_threshold_db,
         noise_heatmap=heatmap_snap,
-        activity_heatmap=activity_snap,
+        activity_heatmap=None,
         calibration=calib_info,
         today={
             "events": day.events,
@@ -706,7 +714,7 @@ def tick() -> None:
             "degree_minutes": round(day.degree_minutes, 1),
             "recent": event_log.recent_today(datetime.now()),
         },
-        detections=[],
+        detections=[{"label": d["label"], "confidence": d["confidence"]} for d in dets],
         feedback=feedback_message(occ, alert_name, 1 if people_present else 0),
         product_title=config.PRODUCT_TITLE,
         preview_zoom=zoom,
@@ -754,9 +762,8 @@ Bridge.provide("mcu_state", on_mcu_state)
 Bridge.provide("knob_event", on_knob_event)
 Bridge.provide("preview_zoom", on_preview_zoom)
 
-# Lightweight HOG + motion presence runs inside camera_loop (all builds). No YOLOX brick.
-camera_thread = threading.Thread(target=camera_loop, daemon=True)
-camera_thread.start()
+camera_thread = None
+start_vision()
 if config.MIC_ENABLED:
     threading.Thread(target=microphone_loop, daemon=True).start()
 

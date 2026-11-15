@@ -33,19 +33,16 @@
           <div class="vision-toolbar">
             <div class="vision-copy">
               <h2>Vision</h2>
-              <p id="activityHeatmapLabel" class="heatmap-label">Activity density · not temperature</p>
-              <p id="activityAcousticCue" class="heatmap-label activity-acoustic-cue"></p>
+              <p id="detectCue" class="heatmap-label">YOLO on-device · boxes while preview on</p>
             </div>
             <button id="previewToggle" class="btn" type="button">Preview on</button>
           </div>
-          <div id="activityHeatmapUnavailable" class="heatmap-unavailable" hidden>Activity map unavailable</div>
           <div id="videoFeedContainer" class="vision-stage">
             <div id="videoPlaceholder" class="vision-idle">
               <p>Preview off</p>
               <span>Presence still updates</span>
             </div>
             <img id="videoFeed" alt="Preview" style="display: none" />
-            <div id="activityGrid" class="activity-grid" role="img" aria-label="Activity density heatmap"></div>
             <div id="presenceBadge" class="presence-badge absent">ABSENT</div>
           </div>
         </section>

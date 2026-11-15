@@ -69,56 +69,20 @@
     });
   }
 
-  function renderActivityHeatmap(ah) {
-    const grid = document.getElementById("activityGrid");
-    const unavail = document.getElementById("activityHeatmapUnavailable");
-    const labelEl = document.getElementById("activityHeatmapLabel");
-    const acousticCue = document.getElementById("activityAcousticCue");
-    if (!grid) return;
-    const available = !!(ah && ah.available);
-    const cols = (ah && ah.cols) || 12;
-    const rows = (ah && ah.rows) || 8;
-    if (labelEl) {
-      labelEl.textContent = (ah && ah.label)
-        || "Activity / movement density · not temperature";
+  function renderDetections(list, peopleCount) {
+    const cue = document.getElementById("detectCue");
+    if (!cue) return;
+    const dets = Array.isArray(list) ? list : [];
+    const nPeople = peopleCount != null ? Number(peopleCount) : dets.filter((x) => x.label === "person").length;
+    if (!dets.length) {
+      cue.textContent = "YOLO on-device · no objects";
+      return;
     }
-    if (unavail) {
-      unavail.hidden = available;
-      unavail.textContent = available ? "" : "Activity map unavailable / not updating";
-    }
-    if (acousticCue) {
-      if (!available) {
-        acousticCue.textContent = "";
-      } else if (ah && ah.acoustic_available) {
-        const f = Number(ah.acoustic_factor);
-        acousticCue.textContent = Number.isFinite(f)
-          ? `Acoustic ×${f.toFixed(2)} room-wide`
-          : "Acoustic boost on";
-      } else {
-        acousticCue.textContent = "Acoustic unavailable · movement only";
-      }
-    }
-    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-    grid.setAttribute("data-unavailable", available ? "0" : "1");
-    grid.replaceChildren();
-    if (!available) return;
-    let cells = ah.cells || [];
-    if (cells.length && typeof cells[0] === "number") {
-      const flat = cells;
-      cells = [];
-      for (let r = 0; r < rows; r++) cells.push(flat.slice(r * cols, (r + 1) * cols));
-    }
-    for (let r = 0; r < rows; r++) {
-      const row = cells[r] || [];
-      for (let c = 0; c < cols; c++) {
-        const cell = document.createElement("span");
-        cell.className = "activity-cell";
-        const i = Math.max(0, Math.min(1, Number(row[c]) || 0));
-        cell.style.setProperty("--i", String(i));
-        grid.appendChild(cell);
-      }
-    }
+    const top = dets.slice(0, 4).map((x) => {
+      const c = Number(x.confidence);
+      return `${x.label}${Number.isFinite(c) ? ` ${Math.round(c * 100)}%` : ""}`;
+    }).join(" · ");
+    cue.textContent = `People ${nPeople} · ${top}`;
   }
 
   function applySnapshot(d) {
@@ -193,7 +157,7 @@
     text("noiseMedian", fmt(n.median_db));
     text("noiseRise", fmt(n.rise_db));
     renderEnergyHeatmap(n.heatmap);
-    renderActivityHeatmap(d.activity_heatmap);
+    renderDetections(d.detections, d.people_count);
 
     const snoozeBtn = document.getElementById("snoozeButton");
     if (snoozeBtn) {
@@ -307,7 +271,7 @@
 
   function startFramePoll() {
     if (frameTimer) return;
-    frameTimer = setInterval(fetchFrame, 200);
+    frameTimer = setInterval(fetchFrame, 100);
     fetchFrame();
   }
 

@@ -57,19 +57,17 @@ room and the window. Every part is optional: the app keeps running with what it 
 
 ## Setup (once)
 
-1. Open `apps/draft-sentinel/` in App Lab and run it. **No** YOLOX / `video_object_detection`
-   brick and **no** `web_ui` — presence uses lightweight OpenCV HOG + motion on the board.
+1. Open `apps/draft-sentinel/` in App Lab and run it. Uses the **`arduino:video_objectdetection`**
+   brick (on-device YOLO) for people/objects; **no** `web_ui`. Motion + window watch reuse brick
+   preview JPEGs. OpenCV capture is only a fallback if the brick is missing.
 2. **Room HUD** (development builds): on a laptop on the same LAN, open
    `http://<board-ip>:7000/` (override with `SENTINEL_UI_PORT`). Title:
    **Draft Sentinel**. Panels poll `GET /api/snapshot` about once a second.
-  Presence is **present/absent** (not a headcount). Vision panel shows a larger rectangular
-  preview with a **12×8 activity density** overlay (movement, not °C); loudness applies a
-  **room-wide** acoustic boost (not per-cell sound location). The noise panel keeps an
-  **energy-over-time** strip. Density and strip bins stay in RAM only. Controls: snooze,
-  calibrate, show-on-board. Turn **Preview on** only when aiming the camera (matrix column
-  12 rows 1–6); with preview on, **rotate the knob to zoom** the live JPEG (1.0×–3.0×).
-  Live JPEG only while preview is on (`/api/preview/frame` → 204 when off). Frames and
-  audio are never saved. Bounding boxes are not required.
+  Presence is **present/absent** (YOLO `person` + motion). Vision preview draws **YOLO boxes**
+  while Preview is on. The noise panel keeps an **energy-over-time** strip (RAM only).
+  Controls: snooze, calibrate, show-on-board. Turn **Preview on** when aiming (matrix column
+  12 rows 1–6); with preview on, **rotate the knob to zoom** (1.0×–3.0×). Live JPEG only
+  while preview is on (`/api/preview/frame` → 204 when off). Frames and audio are never saved.
 3. **Choose the window area**: hold the knob 3 s. While the countdown shows, wave a hand in
    front of the window and read the `AREA 6x4` maps in the log (digits = motion per cell), or
    use the HUD preview. Set `WINDOW_AREA` in `python/sentinel/config.py` to the box of
